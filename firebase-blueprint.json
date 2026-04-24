@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile including preferences and identification for registration.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "ic": { "type": "string" },
+        "preferredTamans": { "type": "array", "items": { "type": "string" } },
+        "role": { "type": "string", "enum": ["user", "organizer"] }
+      },
+      "required": ["uid", "name", "role"]
+    },
+    "Event": {
+      "title": "Distribution Event",
+      "description": "Information about a food distribution event.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "startTime": { "type": "string" },
+        "location": { "type": "object" },
+        "state": { "type": "string" },
+        "district": { "type": "string" },
+        "taman": { "type": "string" },
+        "fullAddress": { "type": "string" },
+        "description": { "type": "string" },
+        "quota": { "type": "integer" },
+        "currentCount": { "type": "integer" },
+        "organizerName": { "type": "string" },
+        "organizerContact": { "type": "string" },
+        "photos": { "type": "array", "items": { "type": "string" } },
+        "status": { "type": "string", "enum": ["upcoming", "ongoing", "completed", "expired"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date", "startTime", "state", "district", "taman", "quota", "organizerName"]
+    },
+    "Registration": {
+      "title": "Event Registration",
+      "description": "Records a user's registration for a specific event.",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "ic": { "type": "string" },
+        "rank": { "type": "integer" },
+        "estimatedTime": { "type": "string" },
+        "attended": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["eventId", "name", "phone", "ic", "rank"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles."
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Stores distribution events."
+    },
+    "/events/{eventId}/registrations/{registrationId}": {
+      "schema": "Registration",
+      "description": "Stores beneficiary registrations for a specific event."
+    }
+  }
+}

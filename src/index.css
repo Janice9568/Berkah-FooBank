@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Outfit", serif;
+}
+
+@layer base {
+  body {
+    @apply bg-[#F4F9F4] text-stone-900;
+  }
+}
+
+:root {
+  --primary: #2D6A4F;
+  --primary-light: #40916C;
+  --primary-dark: #1B4332;
+  --accent: #D8F3DC;
+}

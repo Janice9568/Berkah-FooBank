@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helper Primitives ---
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    
+    // --- Validation Helpers ---
+    
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'role', 'preferredTamans']) &&
+             data.uid == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.role in ['user', 'organizer'] &&
+             data.preferredTamans is list;
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll(['title', 'description', 'date', 'startTime', 'state', 'district', 'taman', 'quota', 'currentCount', 'organizerName', 'organizerId', 'organizerContact', 'status', 'createdAt']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.quota is int && data.quota > 0 && data.quota <= 500 &&
+             (data.organizerId == request.auth.uid || data.organizerId == 'system') &&
+             data.status in ['upcoming', 'ongoing', 'completed', 'expired'] &&
+             data.currentCount is int && data.currentCount >= 0;
+    }
+
+    function isValidRegistration(data) {
+      return data.keys().hasAll(['eventId', 'userId', 'name', 'phone', 'ic', 'rank', 'estimatedTime', 'attended', 'createdAt']) &&
+             data.eventId is string &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() <= 100 &&
+             data.phone is string && data.phone.size() <= 20 &&
+             data.ic is string && data.ic.size() <= 20 &&
+             data.rank is int && data.rank >= 0 &&
+             data.estimatedTime is string &&
+             data.attended is bool;
+    }
+
+    // --- Collection Routes ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow create: if isValidId(userId) && isOwner(userId) && isValidUser(incoming());
+      allow update: if isValidId(userId) && isOwner(userId) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'preferredTamans', 'phone', 'ic', 'role']) &&
+                    isValidUser(incoming());
+    }
+
+    match /events/{eventId} {
+      allow get: if isValidId(eventId);
+      allow list: if true; 
+
+      allow create: if isValidId(eventId) && 
+                    (incoming().organizerId == 'system' || (isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'organizer')) &&
+                    isValidEvent(incoming()) &&
+                    incoming().createdAt == request.time;
+      
+      allow update: if isValidId(eventId) && isSignedIn() && (
+        // Organizer Update
+        (isOwner(existing().organizerId) && isValidEvent(incoming()) && 
+         existing().status != 'completed' &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'status', 'photos', 'quota', 'currentCount'])) ||
+        // Counter synchronization (Atomic increments from registration)
+        (incoming().diff(existing()).affectedKeys().hasOnly(['currentCount']) &&
+         incoming().currentCount == existing().currentCount + 1)
+      );
+
+      // Sub-collection: Registrations
+      match /registrations/{registrationId} {
+        // PII Isolation: Only organizer or the user themselves can read
+        allow get: if isValidId(registrationId) && isSignedIn() && (
+          isOwner(resource.data.userId) || 
+          isOwner(get(/databases/$(database)/documents/events/$(eventId)).data.organizerId)
+        );
+        
+        allow list: if isSignedIn() && (
+          isOwner(get(/databases/$(database)/documents/events/$(eventId)).data.organizerId) ||
+          (resource.data.userId == request.auth.uid)
+        );
+
+        allow create: if isValidId(registrationId) && isSignedIn() && 
+                      isValidRegistration(incoming()) &&
+                      incoming().userId == request.auth.uid &&
+                      incoming().createdAt == request.time &&
+                      // Quota enforcement
+                      get(/databases/$(database)/documents/events/$(eventId)).data.currentCount < 
+                      get(/databases/$(database)/documents/events/$(eventId)).data.quota;
+
+        allow update: if isValidId(registrationId) && isSignedIn() && (
+          // Organizer marking attendance
+          (isOwner(get(/databases/$(database)/documents/events/$(eventId)).data.organizerId) &&
+           incoming().diff(existing()).affectedKeys().hasOnly(['attended']))
+        );
+      }
+    }
+
+    // Collection Group Match for registrations (for My Registrations feature)
+    match /{path=**}/registrations/{registrationId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
